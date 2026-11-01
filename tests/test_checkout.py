@@ -1,71 +1,47 @@
+import re
+
 import pytest
-from pages.login_page import LoginPage
-from pages.products_page import ProductsPage
-from pages.cart_page import CartPage
-from pages.checkout_page import CheckoutPage
-from config.settings import VALID_USER, VALID_PASSWORD
+from playwright.sync_api import expect
+
+BACKPACK = "Sauce Labs Backpack"
+BIKE_LIGHT = "Sauce Labs Bike Light"
 
 
 @pytest.fixture
-def logged_in_with_items(page, base_url):
-    """Fixture to login and add products to cart"""
-    login_page = LoginPage(page, base_url)
-    login_page.login(VALID_USER, VALID_PASSWORD)
-
-    products_page = ProductsPage(page, base_url)
-    products_page.add_product_to_cart("Sauce Labs Backpack")
-    products_page.add_product_to_cart("Sauce Labs Bike Light")
-
-    return page
-
-
-@pytest.mark.regression
-def test_complete_checkout_flow(logged_in_with_items, base_url):
-    """Verify complete checkout flow from cart to order confirmation"""
-    products_page = ProductsPage(logged_in_with_items, base_url)
-    cart_page = CartPage(logged_in_with_items, base_url)
-    checkout_page = CheckoutPage(logged_in_with_items, base_url)
-
-    products_page.click_cart()
-    assert cart_page.get_cart_items_count() == 2
-
-    cart_page.proceed_to_checkout()
-    checkout_page.fill_checkout_info("John", "Doe", "12345")
-    checkout_page.continue_to_checkout_step_two()
-
-    checkout_page.finish_order()
-    assert checkout_page.is_order_confirmed(), "Order should be confirmed"
+def at_checkout(logged_in, cart_page):
+    """Two items in the cart, on checkout step one."""
+    logged_in.add_to_cart(BACKPACK)
+    logged_in.add_to_cart(BIKE_LIGHT)
+    logged_in.open_cart()
+    cart_page.checkout()
 
 
 @pytest.mark.smoke
-def test_checkout_missing_first_name(logged_in_with_items, base_url):
-    """Verify checkout fails when first name is missing"""
-    products_page = ProductsPage(logged_in_with_items, base_url)
-    cart_page = CartPage(logged_in_with_items, base_url)
-    checkout_page = CheckoutPage(logged_in_with_items, base_url)
+def test_complete_purchase(at_checkout, checkout_page, page):
+    checkout_page.fill_info("John", "Doe", "12345")
+    checkout_page.continue_()
 
-    products_page.click_cart()
-    cart_page.proceed_to_checkout()
+    # 29.99 + 9.99 items + 8% tax
+    expect(checkout_page.by_test_id("subtotal-label")).to_have_text("Item total: $39.98")
+    expect(checkout_page.summary_total).to_have_text("Total: $43.18")
 
-    checkout_page.fill_checkout_info("", "Doe", "12345")
-    checkout_page.continue_to_checkout_step_two()
+    checkout_page.finish()
 
-    error = checkout_page.get_error_message()
-    assert "first name" in error.lower(), "Error should mention first name"
+    expect(page).to_have_url(re.compile(r"/checkout-complete\.html$"))
+    expect(checkout_page.confirmation_header).to_have_text("Thank you for your order!")
 
 
-@pytest.mark.regression
-def test_checkout_missing_postal_code(logged_in_with_items, base_url):
-    """Verify checkout fails when postal code is missing"""
-    products_page = ProductsPage(logged_in_with_items, base_url)
-    cart_page = CartPage(logged_in_with_items, base_url)
-    checkout_page = CheckoutPage(logged_in_with_items, base_url)
+@pytest.mark.smoke
+@pytest.mark.parametrize(
+    "first, last, postal, message",
+    [
+        ("", "Doe", "12345", "First Name is required"),
+        ("John", "", "12345", "Last Name is required"),
+        ("John", "Doe", "", "Postal Code is required"),
+    ],
+)
+def test_checkout_required_fields(at_checkout, checkout_page, first, last, postal, message):
+    checkout_page.fill_info(first, last, postal)
+    checkout_page.continue_()
 
-    products_page.click_cart()
-    cart_page.proceed_to_checkout()
-
-    checkout_page.fill_checkout_info("John", "Doe", "")
-    checkout_page.continue_to_checkout_step_two()
-
-    error = checkout_page.get_error_message()
-    assert "postal" in error.lower(), "Error should mention postal code"
+    expect(checkout_page.error).to_contain_text(message)

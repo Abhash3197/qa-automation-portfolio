@@ -1,36 +1,57 @@
+import re
+
 import pytest
-from pages.login_page import LoginPage
-from pages.products_page import ProductsPage
-from config.settings import VALID_USER, VALID_PASSWORD, LOCKED_USER
+from playwright.sync_api import expect
+
+from config.settings import LOCKED_USER, VALID_PASSWORD, VALID_USER
 
 
 @pytest.mark.smoke
-def test_successful_login(page, base_url):
-    """Verify successful login with valid credentials"""
-    login_page = LoginPage(page, base_url)
+def test_successful_login(login_page, products_page, page):
     login_page.login(VALID_USER, VALID_PASSWORD)
 
-    products_page = ProductsPage(page, base_url)
-    assert products_page.get_product_count() > 0, "Products should be visible after login"
+    expect(page).to_have_url(re.compile(r"/inventory\.html$"))
+    expect(products_page.items).to_have_count(6)
 
 
 @pytest.mark.smoke
-def test_login_with_invalid_credentials(page, base_url):
-    """Verify login fails with invalid credentials"""
-    login_page = LoginPage(page, base_url)
+def test_login_with_invalid_credentials(login_page):
     login_page.login("invalid_user", "invalid_password")
 
-    assert login_page.is_error_displayed(), "Error message should be shown"
-    error_text = login_page.get_error_message()
-    assert "user" in error_text.lower() or "invalid" in error_text.lower()
+    expect(login_page.error).to_contain_text("do not match any user")
 
 
 @pytest.mark.smoke
-def test_locked_out_user_login(page, base_url):
-    """Verify locked out user cannot login"""
-    login_page = LoginPage(page, base_url)
+def test_locked_out_user_cannot_login(login_page):
     login_page.login(LOCKED_USER, VALID_PASSWORD)
 
-    assert login_page.is_error_displayed(), "Error message should be shown for locked user"
-    error_text = login_page.get_error_message()
-    assert "locked" in error_text.lower()
+    expect(login_page.error).to_contain_text("locked out")
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "username, password, message",
+    [
+        ("", VALID_PASSWORD, "Username is required"),
+        (VALID_USER, "", "Password is required"),
+    ],
+)
+def test_login_required_fields(login_page, username, password, message):
+    login_page.login(username, password)
+
+    expect(login_page.error).to_contain_text(message)
+
+
+@pytest.mark.regression
+def test_logout_returns_to_login(logged_in, page):
+    page.locator("#react-burger-menu-btn").click()
+    page.locator("[data-test='logout-sidebar-link']").click()
+
+    expect(page).to_have_url("https://www.saucedemo.com/")
+
+
+@pytest.mark.regression
+def test_protected_page_requires_login(page, base_url):
+    page.goto(f"{base_url}/inventory.html")
+
+    expect(page.locator("[data-test='error']")).to_contain_text("only access '/inventory.html' when you are logged in")

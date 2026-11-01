@@ -1,46 +1,36 @@
 from pages.base_page import BasePage
 
 
+def slugify(product_name: str) -> str:
+    return product_name.lower().replace(" ", "-")
+
+
 class ProductsPage(BasePage):
-    # Selectors
-    PRODUCTS_CONTAINER = ".inventory_list"
-    PRODUCT_ITEM = ".inventory_list .inventory_item"
-    PRODUCT_NAME = ".inventory_item_name"
-    PRODUCT_PRICE = ".inventory_item_price"
-    ADD_TO_CART_BUTTON = "button[data-test*='add-to-cart']"
-    REMOVE_BUTTON = "button[data-test*='remove']"
-    CART_BADGE = "[class*='cart_badge']"
-    CART_LINK = ".shopping_cart_link"
-    SORT_DROPDOWN = ".product_sort_container"
-    MENU_BUTTON = "#react-burger-menu-btn"
-    LOGOUT_LINK = "#logout_sidebar_link"
+    @property
+    def items(self):
+        return self.by_test_id("inventory-item")
 
-    def add_product_to_cart(self, product_name: str):
-        products = self.page.query_selector_all(self.PRODUCT_ITEM)
-        for product in products:
-            name = product.query_selector(self.PRODUCT_NAME).text_content()
-            if product_name.lower() in name.lower():
-                product.query_selector(self.ADD_TO_CART_BUTTON).click()
-                return
+    @property
+    def cart_badge(self):
+        return self.by_test_id("shopping-cart-badge")
 
-    def get_product_count(self) -> int:
-        products = self.page.query_selector_all(self.PRODUCT_ITEM)
-        return len(products)
+    def add_to_cart(self, product_name: str):
+        self.by_test_id(f"add-to-cart-{slugify(product_name)}").click()
 
-    def get_cart_item_count(self) -> int:
-        try:
-            return int(self.get_text(self.CART_BADGE).strip())
-        except Exception:
-            return 0
+    def remove_from_cart(self, product_name: str):
+        self.by_test_id(f"remove-{slugify(product_name)}").click()
 
-    def click_cart(self):
-        self.click(self.CART_LINK)
-        self.page.wait_for_load_state("networkidle")
+    def open_cart(self):
+        self.by_test_id("shopping-cart-link").click()
+        self.page.wait_for_url("**/cart.html")
 
-    def sort_products(self, sort_option: str):
-        self.click(self.SORT_DROPDOWN)
-        self.page.select_option(self.SORT_DROPDOWN, sort_option)
+    def sort_by(self, option_value: str):
+        """option_value: az | za | lohi | hilo"""
+        self.by_test_id("product-sort-container").select_option(option_value)
 
-    def logout(self):
-        self.click(self.MENU_BUTTON)
-        self.click(self.LOGOUT_LINK)
+    def prices(self) -> list[float]:
+        texts = self.by_test_id("inventory-item-price").all_text_contents()
+        return [float(t.replace("$", "")) for t in texts]
+
+    def names(self) -> list[str]:
+        return self.by_test_id("inventory-item-name").all_text_contents()

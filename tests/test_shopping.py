@@ -1,63 +1,67 @@
 import pytest
-from pages.login_page import LoginPage
-from pages.products_page import ProductsPage
-from pages.cart_page import CartPage
-from config.settings import VALID_USER, VALID_PASSWORD
+from playwright.sync_api import expect
 
-
-@pytest.fixture
-def logged_in_user(page, base_url):
-    """Fixture to login before each test"""
-    login_page = LoginPage(page, base_url)
-    login_page.login(VALID_USER, VALID_PASSWORD)
-    return page
+BACKPACK = "Sauce Labs Backpack"
+BIKE_LIGHT = "Sauce Labs Bike Light"
 
 
 @pytest.mark.smoke
-def test_add_product_to_cart(logged_in_user, base_url):
-    """Verify adding product to cart"""
-    products_page = ProductsPage(logged_in_user, base_url)
-    initial_count = products_page.get_cart_item_count()
+def test_add_product_to_cart(logged_in):
+    logged_in.add_to_cart(BACKPACK)
 
-    products_page.add_product_to_cart("Sauce Labs Backpack")
-    updated_count = products_page.get_cart_item_count()
-
-    assert updated_count == initial_count + 1, "Cart count should increase by 1"
+    expect(logged_in.cart_badge).to_have_text("1")
 
 
 @pytest.mark.smoke
-def test_add_multiple_products(logged_in_user, base_url):
-    """Verify adding multiple products to cart"""
-    products_page = ProductsPage(logged_in_user, base_url)
+def test_add_multiple_products(logged_in):
+    logged_in.add_to_cart(BACKPACK)
+    logged_in.add_to_cart(BIKE_LIGHT)
 
-    products_page.add_product_to_cart("Sauce Labs Backpack")
-    products_page.add_product_to_cart("Sauce Labs Bike Light")
-
-    assert products_page.get_cart_item_count() == 2, "Cart should have 2 items"
+    expect(logged_in.cart_badge).to_have_text("2")
 
 
 @pytest.mark.regression
-def test_remove_product_from_cart(logged_in_user, base_url):
-    """Verify removing product from cart"""
-    products_page = ProductsPage(logged_in_user, base_url)
-    cart_page = CartPage(logged_in_user, base_url)
+def test_cart_lists_added_products(logged_in, cart_page):
+    logged_in.add_to_cart(BACKPACK)
+    logged_in.add_to_cart(BIKE_LIGHT)
+    logged_in.open_cart()
 
-    products_page.add_product_to_cart("Sauce Labs Backpack")
-    products_page.click_cart()
-
-    assert cart_page.get_cart_items_count() == 1
-    cart_page.remove_item_from_cart("Sauce Labs Backpack")
-    assert cart_page.get_cart_items_count() == 0
+    expect(cart_page.items).to_have_count(2)
+    assert sorted(cart_page.item_names()) == sorted([BACKPACK, BIKE_LIGHT])
 
 
 @pytest.mark.regression
-def test_continue_shopping(logged_in_user, base_url):
-    """Verify continue shopping button returns to products page"""
-    products_page = ProductsPage(logged_in_user, base_url)
-    cart_page = CartPage(logged_in_user, base_url)
+def test_remove_product_from_cart(logged_in, cart_page):
+    logged_in.add_to_cart(BACKPACK)
+    logged_in.open_cart()
+    expect(cart_page.items).to_have_count(1)
 
-    products_page.add_product_to_cart("Sauce Labs Backpack")
-    products_page.click_cart()
+    cart_page.remove(BACKPACK)
+
+    expect(cart_page.items).to_have_count(0)
+
+
+@pytest.mark.regression
+def test_continue_shopping_returns_to_inventory(logged_in, cart_page):
+    logged_in.add_to_cart(BACKPACK)
+    logged_in.open_cart()
+
     cart_page.continue_shopping()
 
-    assert products_page.get_product_count() > 0, "Should be back on products page"
+    expect(logged_in.items).to_have_count(6)
+
+
+@pytest.mark.regression
+def test_sort_price_low_to_high(logged_in):
+    logged_in.sort_by("lohi")
+
+    prices = logged_in.prices()
+    assert prices == sorted(prices)
+
+
+@pytest.mark.regression
+def test_sort_name_z_to_a(logged_in):
+    logged_in.sort_by("za")
+
+    names = logged_in.names()
+    assert names == sorted(names, reverse=True)

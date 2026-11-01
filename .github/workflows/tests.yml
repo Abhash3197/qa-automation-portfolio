@@ -2,49 +2,33 @@ name: UI Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11']
-
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: '3.11'
+        cache: pip
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        playwright install --with-deps chromium
 
-    - name: Install Playwright browsers
-      run: playwright install
+    - name: Run tests (parallel)
+      run: pytest tests/ -v -n auto --html=reports/report.html --self-contained-html
 
-    - name: Run smoke tests
-      run: pytest tests/ -m smoke -v --html=reports/report.html --self-contained-html
-
-    - name: Run all tests
-      run: pytest tests/ -v --html=reports/report.html --self-contained-html -n auto
-
-    - name: Upload test report
+    - name: Upload report and failure screenshots
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-report
-        path: reports/report.html
-
-    - name: Publish test results
-      if: always()
-      uses: EnricoMi/publish-unit-test-result-action@v2
-      with:
-        files: test-results.xml
-        check_name: Test Results
+        path: reports/
